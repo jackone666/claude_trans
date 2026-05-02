@@ -167,7 +167,7 @@
     }
   }
 
-  function doTranslate(targetLang, showProgress, incremental, silent) {
+  function doTranslate(targetLang, showProgress, incremental) {
     if (isTranslating) return;
     isTranslating = true;
 
@@ -181,8 +181,6 @@
 
         if (showProgress) {
           notifyProgress(`找到 ${allBlocks.length} 个文本段，翻译中...`, 10);
-        } else if (!silent) {
-          showAutoIndicator(`翻译中 (${allBlocks.length} 段)...`);
         }
 
         const TRANSLATE_TIMEOUT = 60000;
@@ -199,15 +197,10 @@
         if (showProgress) {
           notifyProgress('翻译完成', 100);
           chrome.runtime.sendMessage({ action: 'done' }).catch(() => {});
-        } else if (!silent) {
-          showAutoIndicator('翻译完成');
-          setTimeout(hideAutoIndicator, 1500);
         }
       } catch (err) {
-        if (!silent) {
-          showAutoIndicator('错误: ' + err.message);
-          setTimeout(hideAutoIndicator, 4000);
-        }
+        showAutoIndicator('翻译失败: ' + err.message);
+        setTimeout(hideAutoIndicator, 5000);
         if (showProgress) {
           chrome.runtime.sendMessage({ action: 'error', error: err.message }).catch(() => {});
         }
@@ -215,12 +208,6 @@
         isTranslating = false;
       }
     })();
-  }
-
-  function autoTranslate(incremental, silent) {
-    if (isTranslating) return;
-    if (!incremental && !detectIsEnglish()) return;
-    doTranslate('Chinese', false, incremental, silent);
   }
 
   let lastUrl = location.href;
@@ -286,7 +273,7 @@
           }
         });
       }
-      doTranslate('Chinese', false, false, true);
+      doTranslate('Chinese', false, false);
     };
 
     confirmDialog.querySelector('#imm-close').onclick = () => {
@@ -302,7 +289,7 @@
     const site = getSiteDomain();
     if (autoDomains && autoDomains.includes(site)) {
       if (detectIsEnglish()) {
-        doTranslate('Chinese', false, false, true);
+        doTranslate('Chinese', false, false);
       }
       return;
     }
