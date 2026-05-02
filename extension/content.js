@@ -30,51 +30,6 @@
     return false;
   }
 
-  // Track code placeholders for inline code inside translatable containers
-  let codePlaceholders = new Map();
-
-  function maskCodeElements() {
-    codePlaceholders.clear();
-    // Only mask code elements that are inside translatable block containers
-    const candidates = document.querySelectorAll('code, kbd, samp, var');
-    candidates.forEach((el, i) => {
-      // Skip if this code element is itself the container (e.g. <pre><code>)
-      let parent = el.parentElement;
-      while (parent && parent !== document.body) {
-        if (BLOCK_ELEMENTS.has(parent.tagName)) {
-          // This code element is inside a translatable block — mask it
-          const placeholder = 'CODE' + i + '';
-          codePlaceholders.set(placeholder, el.textContent);
-          el.textContent = placeholder;
-          return;
-        }
-        if (SKIP_ELEMENTS.has(parent.tagName)) return; // Inside another code block, skip
-        parent = parent.parentElement;
-      }
-    });
-  }
-
-  function unmaskCodeElements() {
-    for (const [placeholder, original] of codePlaceholders) {
-      // Find elements still containing this placeholder and restore
-      const els = document.querySelectorAll('code, kbd, samp, var');
-      els.forEach(el => {
-        if (el.textContent.includes(placeholder)) {
-          el.textContent = original;
-        }
-      });
-    }
-    codePlaceholders.clear();
-  }
-
-  function restoreCodeInText(text) {
-    let result = text;
-    for (const [placeholder, original] of codePlaceholders) {
-      result = result.split(placeholder).join(original);
-    }
-    return result;
-  }
-
   function isVisible(elem) {
     if (!elem) return false;
     const style = window.getComputedStyle(elem);
