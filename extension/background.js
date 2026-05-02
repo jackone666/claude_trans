@@ -3,7 +3,7 @@ const MODEL = 'deepseek-v4-flash';
 const BATCH_SIZE = 10;
 const WORKERS = 10;
 
-const SYSTEM_PROMPT = 'You are a professional translator. Translate each text block to {target_lang}. Output ONLY a valid JSON array: [{"id": 0, "text": "translated"}, ...]. No markdown, no explanations — pure JSON only.';
+const SYSTEM_PROMPT = 'You are a professional translator. Translate each text block to {target_lang}. Rules: 1. Preserve ALL proper nouns unchanged — brand names (LangChain, OpenAI, DeepSeek, GitHub, Vercel), product names, company names, personal names, trademarked terms. 2. Preserve technical terms — API, SDK, CLI, UI, CSS, HTML, JSON, REST, GraphQL, npm, pip, Docker, Kubernetes, React, Vue, Python, JavaScript, TypeScript — keep them in original form. 3. Preserve code identifiers, function names, variable names, URLs, emails, version numbers. 4. Preserve original meaning, tone, and style. 5. Output ONLY a valid JSON array: [{"id": 0, "text": "translated"}, ...]. No markdown, no explanations — pure JSON only.';
 
 async function getApiKey() {
   const { deepseekApiKey } = await chrome.storage.local.get('deepseekApiKey');
