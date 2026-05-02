@@ -208,7 +208,7 @@
     }
   }
 
-  function doTranslate(targetLang, showProgress, incremental) {
+  function doTranslate(targetLang, showProgress, incremental, silent) {
     if (isTranslating) return;
     isTranslating = true;
 
@@ -217,13 +217,12 @@
         const allBlocks = extractTextBlocks(!!incremental);
         if (allBlocks.length === 0) {
           isTranslating = false;
-          if (!incremental) hideAutoIndicator();
           return;
         }
 
         if (showProgress) {
           notifyProgress(`找到 ${allBlocks.length} 个文本段，翻译中...`, 10);
-        } else {
+        } else if (!silent) {
           showAutoIndicator(`翻译中 (${allBlocks.length} 段)...`);
         }
 
@@ -240,13 +239,15 @@
         if (showProgress) {
           notifyProgress('翻译完成', 100);
           chrome.runtime.sendMessage({ action: 'done' }).catch(() => {});
-        } else {
+        } else if (!silent) {
           showAutoIndicator('翻译完成');
           setTimeout(hideAutoIndicator, 1500);
         }
       } catch (err) {
-        showAutoIndicator('错误: ' + err.message);
-        setTimeout(hideAutoIndicator, 4000);
+        if (!silent) {
+          showAutoIndicator('错误: ' + err.message);
+          setTimeout(hideAutoIndicator, 4000);
+        }
         if (showProgress) {
           chrome.runtime.sendMessage({ action: 'error', error: err.message }).catch(() => {});
         }
@@ -256,10 +257,10 @@
     })();
   }
 
-  function autoTranslate(incremental) {
+  function autoTranslate(incremental, silent) {
     if (isTranslating) return;
     if (!incremental && !detectIsEnglish()) return;
-    doTranslate('Chinese', false, incremental);
+    doTranslate('Chinese', false, incremental, silent);
   }
 
   let lastUrl = location.href;
@@ -276,7 +277,7 @@
     if (location.href === lastUrl) return;
     lastUrl = location.href;
     resetForNewPage();
-    setTimeout(autoTranslate, 800);
+    setTimeout(() => autoTranslate(false, true), 800);
   }
 
   // Start translation when DOM has meaningful content
