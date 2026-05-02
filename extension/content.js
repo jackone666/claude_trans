@@ -1,7 +1,8 @@
 (function () {
   'use strict';
 
-  let originalTexts = new Map();
+  let originalTexts = new Map(); // id → original text
+  let allTranslatedNodes = new Map(); // id → text node (persistent across incremental batches)
   let blockElements = [];
   let isTranslating = false;
   let translatedNodes = new WeakSet();
@@ -119,11 +120,13 @@
   function restoreOriginal() {
     if (!originalTexts.size) return;
     for (const [id, original] of originalTexts) {
-      if (blockElements[id]) {
-        blockElements[id].textContent = original;
+      const el = allTranslatedNodes.get(id);
+      if (el && document.contains(el)) {
+        el.textContent = original;
       }
     }
     originalTexts.clear();
+    allTranslatedNodes.clear();
     blockElements = [];
     translatedNodes = new WeakSet();
   }
@@ -135,6 +138,7 @@
       if (!el) continue;
       if (!originalTexts.has(t.id)) {
         originalTexts.set(t.id, el.textContent);
+        allTranslatedNodes.set(t.id, el);
       }
       el.textContent = t.text;
       translatedNodes.add(el);
@@ -267,6 +271,7 @@
 
   function resetForNewPage() {
     originalTexts.clear();
+    allTranslatedNodes.clear();
     blockElements = [];
     translatedNodes = new WeakSet();
     isTranslating = false;
