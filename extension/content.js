@@ -179,10 +179,9 @@
           return;
         }
 
+        showAutoIndicator(`翻译中 (${allBlocks.length} 段)...`);
         if (showProgress) {
           notifyProgress(`找到 ${allBlocks.length} 个文本段，翻译中...`, 10);
-        } else {
-          showAutoIndicator(`翻译中 (${allBlocks.length} 段)...`);
         }
 
         const TRANSLATE_TIMEOUT = 60000;
@@ -196,12 +195,12 @@
         applyTranslation(result.translations);
         pageTranslated = true;
 
+        showAutoIndicator('翻译完成 ✓');
+        setTimeout(hideAutoIndicator, 2500);
+
         if (showProgress) {
           notifyProgress('翻译完成', 100);
           chrome.runtime.sendMessage({ action: 'done' }).catch(() => {});
-        } else {
-          showAutoIndicator('翻译完成');
-          setTimeout(hideAutoIndicator, 1500);
         }
       } catch (err) {
         showAutoIndicator('翻译失败: ' + err.message);
