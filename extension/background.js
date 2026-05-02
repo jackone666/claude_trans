@@ -65,10 +65,19 @@ async function translateAll(blocks, targetLang) {
     batches.push(blocks.slice(i, i + BATCH_SIZE));
   }
 
-  // Parallel API calls via Promise.all
-  const results = await Promise.all(
-    batches.map(batch => callApi(batch, targetLang, apiKey))
-  );
+  // Parallel API calls with concurrency limit
+  const results = new Array(batches.length);
+  let idx = 0;
+
+  async function worker() {
+    while (idx < batches.length) {
+      const i = idx++;
+      results[i] = await callApi(batches[i], targetLang, apiKey);
+    }
+  }
+
+  const workers = Array(Math.min(WORKERS, batches.length)).fill(null).map(() => worker());
+  await Promise.all(workers);
 
   const allTranslations = results.flat();
   allTranslations.sort((a, b) => a.id - b.id);
