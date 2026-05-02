@@ -23,6 +23,7 @@
     let cur = el;
     while (cur) {
       if (SKIP_ELEMENTS.has(cur.tagName)) return true;
+      if (cur.isContentEditable) return true;
       cur = cur.parentElement;
     }
     return false;
