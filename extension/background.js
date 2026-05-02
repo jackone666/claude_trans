@@ -1,91 +1,85 @@
-let nativePort = null;
-let isReady = false;
-let pendingRequests = new Map(); // requestId -> { resolve, reject, timeout }
+const API_BASE = 'https://api.deepseek.com/anthropic/v1/messages';
+const MODEL = 'deepseek-v4-flash';
+const BATCH_SIZE = 10;
+const WORKERS = 10;
 
-const REQUEST_TIMEOUT = 60000;
+const SYSTEM_PROMPT = 'You are a professional translator. Translate each text block to {target_lang}. Output ONLY a valid JSON array: [{"id": 0, "text": "translated"}, ...]. No markdown, no explanations — pure JSON only.';
 
-function connectNative() {
-  return new Promise((resolve, reject) => {
-    if (nativePort && isReady) {
-      resolve(nativePort);
-      return;
-    }
-
-    const connectTimeout = setTimeout(() => {
-      reject(new Error('无法连接 native host，请确认已安装'));
-    }, 5000);
-
-    nativePort = chrome.runtime.connectNative('com.immersive.translate');
-
-    nativePort.onMessage.addListener((msg) => {
-      // Handle ready signal
-      if (msg.status === 'ready') {
-        isReady = true;
-        clearTimeout(connectTimeout);
-        resolve(nativePort);
-        return;
-      }
-
-      // Handle translation response
-      const reqId = msg.requestId;
-      if (reqId && pendingRequests.has(reqId)) {
-        const { resolve: res, reject: rej, timeout } = pendingRequests.get(reqId);
-        clearTimeout(timeout);
-        pendingRequests.delete(reqId);
-
-        if (msg.error) {
-          rej(new Error(msg.error));
-        } else if (msg.translations) {
-          res(msg);
-        } else {
-          rej(new Error('翻译返回格式异常'));
-        }
-      }
-    });
-
-    nativePort.onDisconnect.addListener(() => {
-      isReady = false;
-      nativePort = null;
-      // Reject all pending requests
-      for (const [id, { reject: rej, timeout }] of pendingRequests) {
-        clearTimeout(timeout);
-        rej(new Error('Native host 连接断开，请确认已运行 install.sh 安装'));
-      }
-      pendingRequests.clear();
-    });
-  });
+async function getApiKey() {
+  const { deepseekApiKey } = await chrome.storage.local.get('deepseekApiKey');
+  if (!deepseekApiKey) {
+    throw new Error('请先在插件弹窗中设置 DeepSeek API Key');
+  }
+  return deepseekApiKey;
 }
 
-// Initialize connection when service worker starts
-connectNative().catch(() => {});
+async function callApi(batch, targetLang, apiKey) {
+  const items = batch.map(b => {
+    const text = b.text.length > 2000 ? b.text.slice(0, 2000) + '...' : b.text;
+    return { id: b.id, text };
+  });
 
-// Handle translation requests from content script
+  const body = JSON.stringify({
+    model: MODEL,
+    max_tokens: Math.min(8192, batch.length * 100 + 500),
+    thinking: { type: 'disabled' },
+    system: SYSTEM_PROMPT.replace('{target_lang}', targetLang),
+    messages: [{ role: 'user', content: JSON.stringify(items) }]
+  });
+
+  const resp = await fetch(API_BASE, {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json'
+    },
+    body
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw new Error(`API ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  let contentText = '';
+  for (const block of data.content || []) {
+    if (block.type === 'text') contentText += block.text;
+  }
+
+  try {
+    return JSON.parse(contentText);
+  } catch {
+    // Try regex extraction as fallback
+    const m = contentText.match(/\[\s*\{.*?\}\s*\]/s);
+    return m ? JSON.parse(m[0]) : [];
+  }
+}
+
+async function translateAll(blocks, targetLang) {
+  const apiKey = await getApiKey();
+
+  const batches = [];
+  for (let i = 0; i < blocks.length; i += BATCH_SIZE) {
+    batches.push(blocks.slice(i, i + BATCH_SIZE));
+  }
+
+  // Parallel API calls via Promise.all
+  const results = await Promise.all(
+    batches.map(batch => callApi(batch, targetLang, apiKey))
+  );
+
+  const allTranslations = results.flat();
+  allTranslations.sort((a, b) => a.id - b.id);
+  return { translations: allTranslations };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'translateBlocks') {
-    handleTranslate(msg.blocks, msg.targetLang)
+    translateAll(msg.blocks, msg.targetLang)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ error: err.message }));
     return true;
   }
 });
-
-async function handleTranslate(blocks, targetLang) {
-  const port = await connectNative();
-
-  return new Promise((resolve, reject) => {
-    const reqId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const timeout = setTimeout(() => {
-      pendingRequests.delete(reqId);
-      reject(new Error('翻译超时'));
-    }, REQUEST_TIMEOUT);
-
-    pendingRequests.set(reqId, { resolve, reject, timeout });
-
-    port.postMessage({
-      requestId: reqId,
-      action: 'translate',
-      blocks: blocks,
-      targetLang: targetLang
-    });
-  });
-}

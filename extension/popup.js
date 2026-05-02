@@ -1,17 +1,30 @@
 const translateBtn = document.getElementById('translate-btn');
 const restoreBtn = document.getElementById('restore-btn');
 const langSelect = document.getElementById('lang');
+const apikeyInput = document.getElementById('apikey');
+const apikeyRow = document.getElementById('apikey-row');
+const apikeyToggle = document.getElementById('apikey-toggle');
 const statusEl = document.getElementById('status');
 const progressBar = document.getElementById('progress-bar');
 const progressInner = document.getElementById('progress-inner');
 
-// Load saved language preference
-chrome.storage.local.get('targetLang', ({ targetLang }) => {
+// Load saved preferences
+chrome.storage.local.get(['targetLang', 'deepseekApiKey'], ({ targetLang, deepseekApiKey }) => {
   if (targetLang) langSelect.value = targetLang;
+  if (deepseekApiKey) apikeyInput.value = deepseekApiKey;
 });
 
 langSelect.addEventListener('change', () => {
   chrome.storage.local.set({ targetLang: langSelect.value });
+});
+
+apikeyInput.addEventListener('change', () => {
+  chrome.storage.local.set({ deepseekApiKey: apikeyInput.value.trim() });
+});
+
+apikeyToggle.addEventListener('click', () => {
+  const show = apikeyRow.classList.toggle('show');
+  apikeyToggle.textContent = show ? '设置 API Key ▴' : '设置 API Key ▾';
 });
 
 function setStatus(msg, cls) {
@@ -38,7 +51,6 @@ translateBtn.addEventListener('click', async () => {
   const tab = await getActiveTab();
   if (!tab) return;
 
-  // Check for restricted pages
   if (!tab.url || /^(chrome|chrome-extension|about|edge):/.test(tab.url)) {
     setStatus('此页面无法翻译（系统页面限制）', 'error');
     return;
@@ -82,7 +94,6 @@ translateBtn.addEventListener('click', async () => {
 restoreBtn.addEventListener('click', async () => {
   const tab = await getActiveTab();
   if (!tab) return;
-
   try {
     await chrome.tabs.sendMessage(tab.id, { action: 'restore' });
     setStatus('已恢复原文');
@@ -91,7 +102,7 @@ restoreBtn.addEventListener('click', async () => {
   }
 });
 
-// Listen for progress updates from content script
+// Progress updates from content script
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === 'progress') {
     setStatus(msg.status);

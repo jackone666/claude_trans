@@ -4,27 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Chrome extension for immersive webpage translation, powered by the local `claude` CLI (DeepSeek v4 backend).
+Chrome extension (Manifest V3) for immersive webpage translation. Calls DeepSeek Flash API directly from the browser — no local CLI, no native host, no Python dependency.
 
 ### Architecture
 
-- **`extension/`** — Chrome extension (Manifest V3)
-  - `content.js` — Injected into every page. Extracts text blocks from the DOM, sends them for translation via the background service worker, then applies translations in-place. Handles restore to original text.
-  - `background.js` — Service worker. Bridges content script to the native messaging host. Connects to `com.immersive.translate` native host and forwards translation requests.
-  - `popup.html` / `popup.js` — Extension popup UI. Language selector, translate/restore buttons, progress display.
-- **`native-host/`** — Native messaging host (Python)
-  - `translate.py` — Reads Chrome native-messaging protocol messages from stdin, calls `claude -p --output-format json` with a structured translation prompt, writes responses to stdout. Logs errors to `~/.claude/immersive-translate.log`.
-  - `install.sh` — Registers the native host with Chrome on macOS. Usage: `./install.sh <extension-id>`
+- `extension/content.js` — Injected into every page at `document_idle`. Walks DOM with TreeWalker, extracts translatable text nodes, sends to background for translation, replaces text in-place preserving all element structure (links, buttons, code). Handles auto-detection of English pages, SPA navigation via history hooks + MutationObserver.
+- `extension/background.js` — Service worker. Receives text blocks, splits into batches of 10, fires 10 parallel `fetch()` calls to DeepSeek Flash API (thinking disabled), merges and returns results. Reads API key from `chrome.storage.local`.
+- `extension/popup.html` / `popup.js` — Popup UI with language selector, API key input, translate/restore buttons, progress display.
 
 ### Data flow
 
-1. User clicks "翻译页面" in popup → message sent to content script
-2. Content script walks DOM via TreeWalker, groups text nodes by block element, assigns IDs
-3. Text blocks sent in batches (40 per batch) to background service worker
-4. Background connects to `com.immersive.translate` native host via Chrome native messaging
-5. Native host (Python) calls `claude -p` with: system prompt + JSON text blocks → receives JSON array of `{id, text}` translations
-6. Translations flow back and are applied to DOM elements in-place
+1. Page load → `detectIsEnglish()` checks `lang` attr + `body.innerText` sampling
+2. `extractTextBlocks()` — TreeWalker collects visible text nodes, skipping CODE/PRE/KBD/SAMP/VAR/A/INPUT descendants
+3. Blocks sent via `chrome.runtime.sendMessage` to background service worker
+4. Background splits into 10-block batches, `Promise.all` fires parallel DeepSeek API calls
+5. Each API call: `POST /anthropic/v1/messages` with `thinking: disabled`, returns JSON array
+6. Translations merged, sorted by ID, sent back to content script
+7. Content script sets each text node's `textContent` to translated value
 
 ### Config
 
-Claude Code uses DeepSeek API backend. Credentials and model config in `~/.claude/settings.json`. The native host reads these env vars before spawning `claude -p`.
+API key stored in `chrome.storage.local` (set via popup). No file-based config needed. Model: `deepseek-v4-flash`, thinking disabled, 10 parallel workers.

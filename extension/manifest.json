@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Immersive Translate",
-  "version": "1.0",
-  "description": "沉浸式翻译网页，调用本地 Claude Code 模型",
-  "permissions": ["nativeMessaging", "storage", "scripting"],
-  "host_permissions": ["<all_urls>"],
+  "version": "2.0",
+  "description": "沉浸式翻译网页，直接调用 DeepSeek 模型，无需本地依赖",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["<all_urls>", "https://api.deepseek.com/*"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Immersive Translate"
