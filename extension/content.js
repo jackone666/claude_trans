@@ -197,17 +197,14 @@
     }
     autoIndicator.textContent = msg;
     autoIndicator.style.opacity = '1';
+    // Mark current text node so indicator itself is never translated
+    if (autoIndicator.firstChild) translatedNodes.add(autoIndicator.firstChild);
   }
 
   function hideAutoIndicator() {
     if (autoIndicator) {
       autoIndicator.style.opacity = '0';
-      setTimeout(() => {
-        if (autoIndicator && autoIndicator.style.opacity === '0') {
-          autoIndicator.remove();
-          autoIndicator = null;
-        }
-      }, 500);
+      // Never remove — removal triggers MutationObserver causing infinite loop
     }
   }
 
