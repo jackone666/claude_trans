@@ -304,33 +304,16 @@
     scheduleInitCheck();
   }
 
-  // Detect SPA navigation and incremental DOM changes
-  // Smart debounce: wait for DOM to settle, but don't wait forever
+  // Detect incremental DOM changes and translate new text nodes
   let autoRetryTimer = null;
-  let autoRetryMaxWait = null;
-  const DEBOUNCE_MS = 400;
-  const MAX_WAIT_MS = 3000;
-
   new MutationObserver(() => {
     if (isTranslating) return;
     if (location.href !== lastUrl) {
       onUrlChange();
       return;
     }
-    // Debounce: reset short timer on each mutation
     clearTimeout(autoRetryTimer);
-    autoRetryTimer = setTimeout(() => {
-      clearTimeout(autoRetryMaxWait);
-      autoTranslate(true);
-    }, DEBOUNCE_MS);
-    // Max wait: fire at most every MAX_WAIT_MS if mutations keep coming
-    if (!autoRetryMaxWait) {
-      autoRetryMaxWait = setTimeout(() => {
-        autoRetryMaxWait = null;
-        clearTimeout(autoRetryTimer);
-        autoTranslate(true);
-      }, MAX_WAIT_MS);
-    }
+    autoRetryTimer = setTimeout(() => autoTranslate(true), 300);
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   // Detect SPA navigation: history API
