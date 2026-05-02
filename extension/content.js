@@ -243,7 +243,8 @@
           setTimeout(hideAutoIndicator, 1500);
         }
       } catch (err) {
-        hideAutoIndicator();
+        showAutoIndicator('错误: ' + err.message);
+        setTimeout(hideAutoIndicator, 4000);
         if (showProgress) {
           chrome.runtime.sendMessage({ action: 'error', error: err.message }).catch(() => {});
         }
