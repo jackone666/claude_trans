@@ -194,6 +194,7 @@
         ]);
 
         applyTranslation(result.translations);
+        pageTranslated = true;
 
         if (showProgress) {
           notifyProgress('翻译完成', 100);
@@ -223,6 +224,14 @@
   }
 
   let lastUrl = location.href;
+  let pageTranslated = false;
+  let confirmDialog = null;
+
+  function getSiteDomain() {
+    const parts = location.hostname.split('.');
+    if (parts.length <= 2) return location.hostname;
+    return parts.slice(-2).join('.');
+  }
 
   function resetForNewPage() {
     originalTexts.clear();
@@ -230,28 +239,86 @@
     blockElements = [];
     translatedNodes = new WeakSet();
     isTranslating = false;
+    pageTranslated = false;
+    removeConfirmDialog();
     hideAutoIndicator();
   }
 
-  function onUrlChange() {
-    if (location.href === lastUrl) return;
-    lastUrl = location.href;
-    resetForNewPage();
-    setTimeout(() => autoTranslate(false, true), 800);
+  function removeConfirmDialog() {
+    if (confirmDialog) { confirmDialog.remove(); confirmDialog = null; }
   }
 
-  // Start translation when DOM has meaningful content
+  function showConfirmDialog() {
+    if (confirmDialog) return;
+    if (!detectIsEnglish()) return;
+
+    confirmDialog = document.createElement('div');
+    confirmDialog.style.cssText =
+      'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;' +
+      'background:#1a1a2e;color:#e0e0e0;padding:16px 20px;border-radius:12px;' +
+      'font-size:14px;font-family:sans-serif;box-shadow:0 4px 24px rgba(0,0,0,.5);' +
+      'display:flex;flex-direction:column;gap:12px;min-width:320px;';
+
+    confirmDialog.innerHTML =
+      '<div style="font-size:14px;color:#fff;">检测到英文页面，是否翻译为中文？</div>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#999;cursor:pointer;">' +
+      '<input type="checkbox" id="imm-checkbox" style="accent-color:#4caf50;">' +
+      '该网站一律翻译</label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+      '<button id="imm-close" style="padding:6px 16px;border:1px solid #555;border-radius:6px;' +
+      'background:transparent;color:#aaa;cursor:pointer;font-size:13px;">关闭</button>' +
+      '<button id="imm-translate" style="padding:6px 16px;border:none;border-radius:6px;' +
+      'background:#4caf50;color:#fff;cursor:pointer;font-size:13px;font-weight:600;">翻译</button>' +
+      '</div>';
+
+    document.body.appendChild(confirmDialog);
+
+    confirmDialog.querySelector('#imm-translate').onclick = () => {
+      const always = confirmDialog.querySelector('#imm-checkbox').checked;
+      removeConfirmDialog();
+      if (always) {
+        chrome.storage.local.get('autoDomains', ({ autoDomains }) => {
+          const domains = autoDomains || [];
+          const site = getSiteDomain();
+          if (!domains.includes(site)) {
+            domains.push(site);
+            chrome.storage.local.set({ autoDomains: domains });
+          }
+        });
+      }
+      doTranslate('Chinese', false, false, true);
+    };
+
+    confirmDialog.querySelector('#imm-close').onclick = () => {
+      removeConfirmDialog();
+    };
+  }
+
+  async function checkAndTranslate() {
+    if (pageTranslated || isTranslating) return;
+
+    // Check if this site is in always-translate list
+    const { autoDomains } = await chrome.storage.local.get('autoDomains');
+    const site = getSiteDomain();
+    if (autoDomains && autoDomains.includes(site)) {
+      if (detectIsEnglish()) {
+        doTranslate('Chinese', false, false, true);
+      }
+      return;
+    }
+
+    // Show confirmation dialog
+    showConfirmDialog();
+  }
+
+  // Initial check when page has content
   let initTimer = null;
   function scheduleInitCheck() {
     clearTimeout(initTimer);
     initTimer = setTimeout(() => {
-      if (isTranslating || originalTexts.size > 0) return;
-      // Only auto-translate if page has enough content to be worth it
-      const sample = (document.body.innerText || '').length;
-      if (sample > 200) {
-        autoTranslate();
+      if ((document.body.innerText || '').length > 200) {
+        checkAndTranslate();
       } else {
-        // Not enough content yet, check again later
         scheduleInitCheck();
       }
     }, 300);
@@ -263,7 +330,7 @@
     scheduleInitCheck();
   }
 
-  // Detect incremental DOM changes and translate new text nodes
+  // Incremental DOM changes: only translate new nodes on already-translated pages
   let autoRetryTimer = null;
   new MutationObserver(() => {
     if (isTranslating) return;
@@ -271,11 +338,19 @@
       onUrlChange();
       return;
     }
+    if (!pageTranslated) return;
     clearTimeout(autoRetryTimer);
-    autoRetryTimer = setTimeout(() => autoTranslate(true), 300);
+    autoRetryTimer = setTimeout(() => doTranslate('Chinese', false, true), 300);
   }).observe(document.documentElement, { childList: true, subtree: true });
 
-  // Detect SPA navigation: history API
+  // SPA navigation
+  function onUrlChange() {
+    if (location.href === lastUrl) return;
+    lastUrl = location.href;
+    resetForNewPage();
+    setTimeout(checkAndTranslate, 800);
+  }
+
   const origPushState = history.pushState;
   history.pushState = function () {
     origPushState.apply(this, arguments);
@@ -288,12 +363,13 @@
   };
   window.addEventListener('popstate', () => setTimeout(onUrlChange, 300));
 
-  // Message handler for popup
+  // Popup message handler
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'translate') {
       doTranslate(msg.targetLang, true);
     } else if (msg.action === 'restore') {
       restoreOriginal();
+      pageTranslated = false;
     }
   });
 })();
