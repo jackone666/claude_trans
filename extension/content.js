@@ -4,6 +4,7 @@
   let originalTexts = new Map();
   let blockElements = [];
   let isTranslating = false;
+  let translatedNodes = new WeakSet();
 
   const BLOCK_ELEMENTS = new Set([
     'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
@@ -82,9 +83,9 @@
       elem.offsetHeight > 0;
   }
 
-  function extractTextBlocks() {
+  function extractTextBlocks(skipTranslated) {
     const blocks = [];
-    blockElements = []; // Now stores text nodes directly, not containers
+    blockElements = [];
 
     const walker = document.createTreeWalker(
       document.body,
@@ -93,6 +94,7 @@
         acceptNode: function (node) {
           if (!node.parentElement) return NodeFilter.FILTER_REJECT;
           if (isCodeDescendant(node.parentElement)) return NodeFilter.FILTER_REJECT;
+          if (skipTranslated && translatedNodes.has(node)) return NodeFilter.FILTER_REJECT;
           const text = node.textContent.trim();
           if (!text || text.length < 2) return NodeFilter.FILTER_REJECT;
           return NodeFilter.FILTER_ACCEPT;
@@ -107,7 +109,7 @@
       if (text.length < 2) continue;
 
       blocks.push({ id: blocks.length, text: text });
-      blockElements.push(node); // Store text node reference
+      blockElements.push(node);
     }
 
     return blocks;
@@ -122,6 +124,7 @@
     }
     originalTexts.clear();
     blockElements = [];
+    translatedNodes = new WeakSet();
   }
 
   function applyTranslation(translations) {
@@ -133,6 +136,7 @@
         originalTexts.set(t.id, el.textContent);
       }
       el.textContent = t.text;
+      translatedNodes.add(el);
     }
   }
 
@@ -206,16 +210,16 @@
     }
   }
 
-  function doTranslate(targetLang, showProgress) {
+  function doTranslate(targetLang, showProgress, incremental) {
     if (isTranslating) return;
     isTranslating = true;
 
     (async () => {
       try {
-        const allBlocks = extractTextBlocks();
+        const allBlocks = extractTextBlocks(!!incremental);
         if (allBlocks.length === 0) {
           isTranslating = false;
-          hideAutoIndicator();
+          if (!incremental) hideAutoIndicator();
           return;
         }
 
@@ -254,10 +258,10 @@
     })();
   }
 
-  function autoTranslate() {
+  function autoTranslate(incremental) {
     if (isTranslating) return;
-    if (!detectIsEnglish()) return;
-    doTranslate('Chinese', false);
+    if (!incremental && !detectIsEnglish()) return;
+    doTranslate('Chinese', false, incremental);
   }
 
   let lastUrl = location.href;
@@ -265,6 +269,7 @@
   function resetForNewPage() {
     originalTexts.clear();
     blockElements = [];
+    translatedNodes = new WeakSet();
     isTranslating = false;
     hideAutoIndicator();
   }
@@ -299,7 +304,7 @@
     scheduleInitCheck();
   }
 
-  // Detect SPA navigation and late-loading content
+  // Detect SPA navigation and incremental DOM changes
   let autoRetryTimer = null;
   new MutationObserver(() => {
     if (isTranslating) return;
@@ -307,12 +312,9 @@
       onUrlChange();
       return;
     }
-    // Check if significant new content appeared since last translation
-    const currentTextLen = (document.body.innerText || '').length;
-    const prevTextLen = originalTexts.size > 0 ? blockElements.length * 50 : 0; // rough estimate
-    if (originalTexts.size > 0 && currentTextLen < prevTextLen * 1.5) return;
+    // Incremental translation: only translate newly added text nodes
     clearTimeout(autoRetryTimer);
-    autoRetryTimer = setTimeout(autoTranslate, 1000);
+    autoRetryTimer = setTimeout(() => autoTranslate(true), 800);
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   // Detect SPA navigation: history API
